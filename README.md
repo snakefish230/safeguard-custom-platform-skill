@@ -20,6 +20,7 @@ When activated, the skill guides an agent through a structured 7-phase workflow:
 
 - **PowerShell 7.4 LTS** (7.6+ has a known serialization bug)
 - **[safeguard-ps](https://github.com/OneIdentity/safeguard-ps)** PowerShell module
+- **[customplatforms.psm1](https://github.com/OneIdentity/safeguard-ps/blob/master/modules/customplatforms/customplatforms.psm1)** -- downloaded separately (not included in safeguard-ps)
 - Network access to a Safeguard SPP appliance
 - A Safeguard service account with **Authorizer** and **Asset Administrator** roles
 
@@ -38,7 +39,7 @@ safeguard-custom-platform-skill/
 │   ├── script-command-reference.md   # Full JSON script format and command reference
 │   ├── authentication-methods.md     # Safeguard and target platform auth methods
 │   ├── permission-requirements.md    # Service account permissions at every level
-│   └── salesforce-example.md         # Working Salesforce reference implementation
+│   └── servicenow-example.md         # Proven, working ServiceNow reference implementation
 └── assets/
     └── templates/
         ├── base-platform.json        # Minimal skeleton (start here if nothing else fits)
@@ -98,9 +99,9 @@ Consult your agent's documentation for the exact skills directory path.
 Once installed, ask your agent something like:
 
 - "Create a custom platform for ServiceNow"
-- "Add Salesforce support to Safeguard"
 - "Build a custom platform script for our MongoDB servers"
 - "Help me integrate an unsupported system with Safeguard for privileged account management"
+- "Add support for our internal REST API to Safeguard"
 
 The agent will activate the skill and walk you through the full workflow.
 
@@ -118,8 +119,11 @@ The agent will activate the skill and walk you through the full workflow.
 ## Key Constraints
 
 - **Secret parameters** (API keys, client secrets) must be set through the Safeguard web GUI -- the REST API strips secret values on write.
-- **Test ordering matters** -- always run ChangePassword before CheckPassword. The vault must contain a password before CheckPassword can compare.
+- **Test ordering matters** -- always run ChangePassword (or `Set-SafeguardAssetAccountPassword`) before CheckPassword. The vault must contain a password before CheckPassword can compare.
 - **Scripts execute on the appliance** -- the Safeguard appliance runs the platform script, not the automation host. The appliance needs network access to the target.
+- **customplatforms.psm1 is separate** -- the custom platform cmdlets are not part of the `safeguard-ps` module and must be downloaded from GitHub.
+- **Cannot change asset platform** -- an existing asset's platform type cannot be changed after creation; you must create a new asset.
+- **JSON parsing requires two steps** -- extract `.Content` to a string variable first, then `ExtractJsonObject` on that string. Do not pass the response object directly.
 
 ## Related Resources
 

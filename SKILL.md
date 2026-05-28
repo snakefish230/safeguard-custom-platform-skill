@@ -57,12 +57,20 @@ Document these with the user:
 .\scripts\setup-dev-environment.ps1
 ```
 
-This installs `safeguard-ps`, imports `customplatforms.psm1`, and creates `config/config.json`.
+This installs `safeguard-ps`, downloads `customplatforms.psm1` from GitHub
+(it is NOT included in the `safeguard-ps` module), and creates `config/config.json`.
+
+If setting up manually, download `customplatforms.psm1` separately:
+
+```powershell
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/OneIdentity/safeguard-ps/master/modules/customplatforms/customplatforms.psm1' -OutFile './customplatforms.psm1'
+```
 
 Verify connectivity:
 
 ```powershell
 Import-Module safeguard-ps
+Import-Module ./customplatforms.psm1
 Connect-Safeguard -Appliance 'YOUR_APPLIANCE' -IdentityProvider 'local' -Credential (Get-Credential) -Insecure
 Get-SafeguardLoggedInUser
 ```
@@ -157,14 +165,18 @@ custom parameters, and setup steps.
 - **Id field**: Must be alphanumeric only -- no spaces, hyphens, or special characters.
 - **BackEnd field**: Must always be `"Scriptable"` for custom platforms.
 - **Secret params via GUI only**: The Safeguard REST API does not persist secret parameter values. You must set them in the Safeguard web UI.
-- **Test ordering**: Always ChangePassword before CheckPassword. The vault must contain a password before CheckPassword can compare.
+- **Test ordering**: Always ChangePassword (or `Set-SafeguardAssetAccountPassword`) before CheckPassword. The vault must contain a password before CheckPassword can compare.
 - **Variable delimiter collision**: Safeguard uses `%` for variable substitution. Passwords containing `%` will cause substitution errors.
 - **ServiceAccountCredentialType**: Set to `"Custom"` on the asset connection properties when using custom script parameters.
-- **Async operations**: Password change/check are async. Poll `TaskProperties` for results -- task submission does not guarantee success.
-- **JSON parsing pattern**: Always `ExtractJsonObject` first, then access properties via `%{Parsed.property}%`.
-- **URL substitution**: Use `%VariableName%` in URLs with `"SubstitutionInUrl": true`. Do NOT use `%{UrlEncode()}%` -- it does not resolve.
-- **PowerShell 7.6+ bug**: Use PowerShell 7.4 LTS. There is a known SYSLIB0051 serialization bug in 7.6+.
+- **Async operations**: Password change/check are async. Poll `TaskProperties` for results -- task submission does not guarantee success. Verify success by checking `LastSuccessPasswordChangeDate` (populated = success) and `LastFailurePasswordChangeDate` (populated = failure).
+- **JSON parsing -- two-step pattern**: Do NOT pass the response object directly to `ExtractJsonObject`. First extract `.Content` into a string variable with `SetItem`, then parse that string. This is the proven correct pattern.
+- **URL substitution**: Use `%VariableName%` in URLs with `"SubstitutionInUrl": true`. Do NOT use `%{UrlEncode()}%` -- it does not resolve. Missing `SubstitutionInUrl: true` causes literal `%Variable%` strings to be sent.
+- **PowerShell 7.6+ bug**: Use PowerShell 7.4 LTS. There is a known SYSLIB0051 serialization bug in 7.6+. Use `Invoke-SafeguardMethod` instead of high-level cmdlets like `Test-SafeguardAssetAccountPassword` as a workaround.
 - **Scripts run ON the appliance**: Custom platform scripts execute on the Safeguard appliance, not the automation host. The appliance must have network access to the target.
+- **customplatforms.psm1 is separate**: The custom platform cmdlets (`New-SafeguardCustomPlatform`, `Import-SafeguardCustomPlatformScript`, etc.) are NOT included in the `safeguard-ps` module. Download `customplatforms.psm1` separately from the [safeguard-ps GitHub repo](https://github.com/OneIdentity/safeguard-ps/blob/master/modules/customplatforms/customplatforms.psm1).
+- **Cannot change asset platform**: You cannot change an existing asset's platform type after creation. You must create a new asset.
+- **Discovery needs Safeguard config**: Having `DiscoverAccounts` in the script is not enough. Account discovery also requires a discovery schedule and rules configured in Safeguard (via GUI or API), assigned to the asset.
+- **ServiceNow field values**: ServiceNow REST API returns fields as objects with a `.Value` property. Use `%{user.user_name.Value}%` not `%{user.user_name}%`.
 
 ## Key Principles
 
@@ -181,6 +193,6 @@ custom parameters, and setup steps.
 - [Script command reference](references/script-command-reference.md) -- read when implementing script operations
 - [Authentication methods](references/authentication-methods.md) -- read when configuring auth for Safeguard or target platforms
 - [Permission requirements](references/permission-requirements.md) -- read when setting up service accounts
-- [Salesforce example](references/salesforce-example.md) -- read as a working reference implementation
+- [ServiceNow example](references/servicenow-example.md) -- read as a proven, working reference implementation
 - Templates in `assets/templates/` -- copy as starting points for new platforms
 - Scripts in `scripts/` -- automation for generate, upload, test, and environment setup

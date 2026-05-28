@@ -166,13 +166,36 @@ Create or set a variable:
 
 ### ExtractJsonObject
 
-Parse a JSON response body into a navigable object:
+Parse a JSON string into a navigable object. **Important:** Do not pass the
+response object directly. First extract `.Content` into a string variable, then
+parse that string. This two-step pattern is proven correct:
 
 ```json
-{ "ExtractJsonObject": { "JsonObjectName": "ResponseObj", "Name": "ParsedResult" } }
+{ "SetItem": { "Name": "JsonString", "Value": "%{Response.Content}%" } },
+{ "ExtractJsonObject": { "JsonObjectName": "JsonString", "Name": "ParsedResult" } }
 ```
 
 After extraction, access properties: `%{ParsedResult.property}%` or `%{ParsedResult.records[0].Id}%`.
+
+### Log
+
+Write a debug message to the Safeguard task log:
+
+```json
+{ "Log": { "Text": "Discovered %{count}% users at offset %{offset}%" } }
+```
+
+### Status
+
+Report progress during long-running operations (e.g., discovery):
+
+```json
+{ "Status": {
+    "Type": "Discovering",
+    "Percent": 50,
+    "Message": { "Name": "DiscoveringAccounts", "Parameters": ["%Address%"] }
+} }
+```
 
 ## Control Flow Commands
 
@@ -235,6 +258,23 @@ Iterate over lines of text output (useful for SSH command output):
 } }
 ```
 
+### For
+
+C-style loop with initializer, condition, and increment. Useful for paginated API calls:
+
+```json
+{ "For": {
+    "Before": "offset = 0",
+    "Condition": "hasMore",
+    "End": "offset = offset + PageSize",
+    "Body": { "Do": [ ... ] }
+} }
+```
+
+Use `SetItem` to set `hasMore = false` when the stop condition is met (e.g., result count < page size).
+
+See [references/servicenow-example.md](servicenow-example.md) for a complete paginated discovery example.
+
 ### Try/Catch
 
 Error handling:
@@ -282,12 +322,33 @@ Throw an error and fail the operation:
 - `%{Parsed.records[0].Id}%` -- array indexing
 - `%{Parsed.result[0].sys_id.Value}%` -- nested property access
 - `%{Convert.ToBase64String(Encoding.UTF8.GetBytes(Username + ':' + Password))}%` -- Base64 encoding
+- `%{Collection.Count()}%` -- count items in a collection
+- `%{Collection.FirstOrDefault(o => o.prop != null && o.prop.Value == Target)}%` -- LINQ query
+- `%{"literal" + Variable + "more literal"}%` -- string concatenation
+
+### LINQ Expressions
+
+Collections support LINQ-style methods for querying objects:
+
+```json
+{ "SetItem": {
+    "Name": "MatchedUser",
+    "Value": "%{ Users.FirstOrDefault(o => o.user_name != null && o.user_name.Value == AccountUserName) }%"
+} }
+```
+
+This is proven useful when the API returns a collection and you need to find a specific item by property value. Access the matched object's properties afterward:
+
+```json
+{ "SetItem": { "Name": "UserId", "Value": "%{ MatchedUser.sys_id.Value }%" } }
+```
 
 ### Important Notes
 
 - Use `%VariableName%` in URLs with `"SubstitutionInUrl": true`. Do NOT use `%{UrlEncode()}%` -- it does not resolve.
 - Mark variables containing secrets with `"IsSecret": true` to prevent logging.
 - Passwords containing `%` will break variable substitution.
+- Some APIs (e.g., ServiceNow) return field values as objects with a `.Value` property -- use `%{item.field.Value}%` not `%{item.field}%`.
 
 ## Common Patterns
 
@@ -308,17 +369,54 @@ Throw an error and fail the operation:
     "IsSecret": true,
     "Content": {}
 } },
-{ "ExtractJsonObject": { "JsonObjectName": "AuthResp", "Name": "AuthJson" } },
+{ "SetItem": { "Name": "AuthContent", "Value": "%{AuthResp.Content}%" } },
+{ "ExtractJsonObject": { "JsonObjectName": "AuthContent", "Name": "AuthJson" } },
 { "SetItem": { "Name": "BearerToken", "Type": "Secret", "Value": "%{AuthJson.access_token}%" } }
 ```
 
-### Find-Then-Modify User
+### Find-Then-Modify User (Proven Pattern)
+
+Query for a user, extract the ID, then modify. This pattern is from the
+verified ServiceNow implementation:
 
 ```json
-{ "Request": { "Verb": "GET", "Url": "api/users?username=%AccountUsername%", ... } },
-{ "ExtractJsonObject": { "JsonObjectName": "FindResp", "Name": "FindJson" } },
-{ "SetItem": { "Name": "UserId", "Value": "%{FindJson.records[0].Id}%" } },
-{ "Request": { "Verb": "POST", "Url": "api/users/%UserId%/password", ... } }
+{ "Request": {
+    "Verb": "GET",
+    "Url": "api/now/table/sys_user?sysparm_query=user_name=%AccountUserName%&sysparm_limit=1&sysparm_fields=sys_id,user_name",
+    "SubstitutionInUrl": true, ...
+} },
+{ "SetItem": { "Name": "JsonString", "Value": "%{SystemUsers.Content}%" } },
+{ "ExtractJsonObject": { "JsonObjectName": "JsonString", "Name": "ParsedResponse" } },
+{ "SetItem": { "Name": "Users", "Value": "%{ParsedResponse.result}%" } },
+{ "SetItem": { "Name": "ParsedUser", "Value": "%{ Users.FirstOrDefault(o => o.user_name != null && o.user_name.Value == AccountUserName) }%" } },
+{ "SetItem": { "Name": "UserId", "Value": "%{ ParsedUser.sys_id.Value }%" } },
+{ "Request": { "Verb": "Patch", "Url": "api/now/table/sys_user/%UserId%", "SubstitutionInUrl": true, ... } }
+```
+
+### Paginated Discovery
+
+Use `For` loop with offset-based pagination:
+
+```json
+{ "SetItem": { "Name": "offset", "Value": 0 } },
+{ "SetItem": { "Name": "hasMore", "Value": true } },
+{ "For": {
+    "Before": "offset = 0",
+    "Condition": "hasMore",
+    "End": "offset = offset + PageSize",
+    "Body": { "Do": [
+        { "Request": { "Verb": "GET", "Url": "%url%", ... } },
+        { "SetItem": { "Name": "jsonStr", "Value": "%{resp.Content}%" } },
+        { "ExtractJsonObject": { "JsonObjectName": "jsonStr", "Name": "parsed" } },
+        { "SetItem": { "Name": "count", "Value": "%{parsed.result.Count()}%" } },
+        { "Condition": { "If": "count == 0", "Then": { "Do": [
+            { "SetItem": { "Name": "hasMore", "Value": false } }
+        ] } } },
+        { "ForEach": { "CollectionName": "users", "ElementName": "user", "Body": { "Do": [
+            { "WriteDiscoveredAccount": { "Name": "%{user.user_name.Value}%" } }
+        ] } } }
+    ] }
+} }
 ```
 
 ## External References

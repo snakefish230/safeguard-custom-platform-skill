@@ -80,7 +80,7 @@ For REST APIs with OAuth username/password grant:
 }
 ```
 
-Examples: Salesforce (see `references/salesforce-example.md`)
+Examples: Salesforce, ServiceNow (see [references/servicenow-example.md](servicenow-example.md) for a working implementation)
 
 ### OAuth 2.0 JWT Bearer Flow
 
