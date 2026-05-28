@@ -1,0 +1,61 @@
+{
+    "Id": "PLATFORM_ID",
+    "BackEnd": "Scriptable",
+    "Meta": {
+        "Author": "Safeguard Custom Platform Toolkit",
+        "Description": "PLATFORM_DESCRIPTION",
+        "ScriptVersion": "1.0.0",
+        "Last Updated": "YYYY-MM-DD"
+    },
+    "CheckSystem": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "Comment": "TODO: Implement connectivity test using the service account" },
+            { "Throw": { "Value": "CheckSystem not implemented" } }
+        ]
+    },
+    "CheckPassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "Comment": "TODO: Implement password verification for the target account" },
+            { "Comment": "Return true if password is valid, false if invalid" },
+            { "Throw": { "Value": "CheckPassword not implemented" } }
+        ]
+    },
+    "ChangePassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } },
+            { "NewPassword": { "Type": "Secret", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "Comment": "TODO: Implement password change using the service account" },
+            { "Comment": "Authenticate as service account, then change target account password" },
+            { "Throw": { "Value": "ChangePassword not implemented" } }
+        ]
+    },
+    "DiscoverAccounts": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "Comment": "TODO: Implement account discovery" },
+            { "Comment": "Use WriteDiscoveredAccount for each found account" },
+            { "Throw": { "Value": "DiscoverAccounts not implemented" } }
+        ]
+    },
+    "Functions": []
+}

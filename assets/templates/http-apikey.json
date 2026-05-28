@@ -1,0 +1,186 @@
+{
+    "Id": "PLATFORM_ID",
+    "BackEnd": "Scriptable",
+    "Meta": {
+        "Author": "Safeguard Custom Platform Toolkit",
+        "Description": "REST API platform with API Key authentication",
+        "ScriptVersion": "1.0.0",
+        "Last Updated": "YYYY-MM-DD"
+    },
+    "CheckSystem": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncApiKey": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "BaseAddress": { "Address": "https://%Address%" } },
+            { "NewHttpRequest": { "ObjectName": "TestReq" } },
+            { "Headers": {
+                "RequestObjectName": "TestReq",
+                "AddHeaders": { "x-api-key": "%FuncApiKey%" }
+            } },
+            { "Request": {
+                "RequestObjectName": "TestReq",
+                "ResponseObjectName": "TestResp",
+                "Verb": "GET",
+                "Url": "/api/v1/health",
+                "IgnoreServerCertAuthentication": true,
+                "Content": {}
+            } },
+            { "Condition": {
+                "If": "TestResp.StatusCode == 200",
+                "Then": { "Do": [{ "Return": { "Value": true } }] },
+                "Else": { "Do": [{ "Return": { "Value": false } }] }
+            } }
+        ]
+    },
+    "CheckPassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } },
+            { "FuncApiKey": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "Comment": "Strategy: Attempt to authenticate as the target user using their password" },
+            { "Comment": "Adjust this to match your platform's authentication endpoint" },
+            { "BaseAddress": { "Address": "https://%Address%" } },
+            { "NewHttpRequest": { "ObjectName": "AuthReq" } },
+            { "Headers": {
+                "RequestObjectName": "AuthReq",
+                "AddHeaders": { "x-api-key": "%FuncApiKey%" }
+            } },
+            { "SetItem": {
+                "Name": "AuthBody",
+                "Value": { "username": "%AccountUsername%", "password": "%AccountPassword%" },
+                "IsSecret": true
+            } },
+            { "Request": {
+                "RequestObjectName": "AuthReq",
+                "ResponseObjectName": "AuthResp",
+                "Verb": "POST",
+                "Url": "/api/v1/auth/validate",
+                "IgnoreServerCertAuthentication": true,
+                "IsSecret": true,
+                "Content": {
+                    "ContentType": "application/json",
+                    "ContentObjectName": "AuthBody"
+                }
+            } },
+            { "Condition": {
+                "If": "AuthResp.StatusCode == 200",
+                "Then": { "Do": [{ "Return": { "Value": true } }] },
+                "Else": { "Do": [{ "Return": { "Value": false } }] }
+            } }
+        ]
+    },
+    "ChangePassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } },
+            { "NewPassword": { "Type": "Secret", "Required": true } },
+            { "FuncApiKey": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "BaseAddress": { "Address": "https://%Address%" } },
+
+            { "Comment": "Step 1: Find the user by username" },
+            { "NewHttpRequest": { "ObjectName": "FindReq" } },
+            { "Headers": {
+                "RequestObjectName": "FindReq",
+                "AddHeaders": { "x-api-key": "%FuncApiKey%" }
+            } },
+            { "Request": {
+                "RequestObjectName": "FindReq",
+                "ResponseObjectName": "FindResp",
+                "Verb": "GET",
+                "Url": "/api/v1/users?username=%AccountUsername%",
+                "SubstitutionInUrl": true,
+                "IgnoreServerCertAuthentication": true,
+                "Content": {}
+            } },
+            { "Condition": {
+                "If": "FindResp.StatusCode == 200",
+                "Then": { "Do": [
+                    { "ExtractJsonObject": { "JsonObjectName": "FindResp", "Name": "FindJson" } },
+                    { "Comment": "TODO: Adjust property path to extract user ID" },
+                    { "SetItem": { "Name": "UserId", "Value": "%{FindJson.result[0].sys_id.Value}%" } },
+
+                    { "Comment": "Step 2: Change the password" },
+                    { "NewHttpRequest": { "ObjectName": "ChangeReq" } },
+                    { "Headers": {
+                        "RequestObjectName": "ChangeReq",
+                        "AddHeaders": { "x-api-key": "%FuncApiKey%" }
+                    } },
+                    { "SetItem": {
+                        "Name": "ChangeBody",
+                        "Value": { "user_password": "%NewPassword%" },
+                        "IsSecret": true
+                    } },
+                    { "Request": {
+                        "RequestObjectName": "ChangeReq",
+                        "ResponseObjectName": "ChangeResp",
+                        "Verb": "PATCH",
+                        "Url": "/api/v1/users/%UserId%",
+                        "SubstitutionInUrl": true,
+                        "IgnoreServerCertAuthentication": true,
+                        "IsSecret": true,
+                        "Content": {
+                            "ContentType": "application/json",
+                            "ContentObjectName": "ChangeBody"
+                        }
+                    } },
+                    { "Condition": {
+                        "If": "ChangeResp.StatusCode == 200",
+                        "Then": { "Do": [{ "Return": { "Value": true } }] },
+                        "Else": { "Do": [{ "Throw": { "Value": "Password change failed" } }] }
+                    } }
+                ] },
+                "Else": { "Do": [{ "Throw": { "Value": "User not found" } }] }
+            } }
+        ]
+    },
+    "DiscoverAccounts": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncApiKey": { "Type": "Secret", "Required": true } }
+        ],
+        "Do": [
+            { "BaseAddress": { "Address": "https://%Address%" } },
+            { "NewHttpRequest": { "ObjectName": "ListReq" } },
+            { "Headers": {
+                "RequestObjectName": "ListReq",
+                "AddHeaders": { "x-api-key": "%FuncApiKey%" }
+            } },
+            { "Request": {
+                "RequestObjectName": "ListReq",
+                "ResponseObjectName": "ListResp",
+                "Verb": "GET",
+                "Url": "/api/v1/users?sysparm_fields=user_name&sysparm_query=active=true",
+                "IgnoreServerCertAuthentication": true,
+                "Content": {}
+            } },
+            { "Condition": {
+                "If": "ListResp.StatusCode == 200",
+                "Then": { "Do": [
+                    { "ExtractJsonObject": { "JsonObjectName": "ListResp", "Name": "ListJson" } },
+                    { "Comment": "TODO: Adjust collection and username property names" },
+                    { "SetItem": { "Name": "Users", "Value": "%{ListJson.result}%" } },
+                    { "ForEach": {
+                        "CollectionName": "Users",
+                        "ElementName": "user",
+                        "Body": {
+                            "Do": [
+                                { "WriteDiscoveredAccount": { "Name": "%{user.user_name.Value}%" } }
+                            ]
+                        }
+                    } },
+                    { "Return": { "Value": true } }
+                ] },
+                "Else": { "Do": [{ "Throw": { "Value": "Failed to list users" } }] }
+            } }
+        ]
+    },
+    "Functions": []
+}

@@ -1,0 +1,77 @@
+{
+    "Id": "PLATFORM_ID",
+    "BackEnd": "Scriptable",
+    "Meta": {
+        "Author": "Safeguard Custom Platform Toolkit",
+        "Description": "Database platform with SQL-based password management via REST API proxy",
+        "ScriptVersion": "1.0.0",
+        "Last Updated": "YYYY-MM-DD"
+    },
+    "CheckSystem": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } },
+            { "DatabaseName": { "Type": "String", "Required": false, "DefaultValue": "master" } },
+            { "DatabasePort": { "Type": "integer", "Required": false, "DefaultValue": "1433" } }
+        ],
+        "Do": [
+            { "Comment": "NOTE: Safeguard custom platform scripts use HTTP/SSH commands." },
+            { "Comment": "For direct database access, use SSH to connect to a jump host" },
+            { "Comment": "and run SQL commands, or use a REST API proxy for the database." },
+            { "Comment": "This template shows an SSH-to-database pattern." },
+            { "Comment": "Adjust the connection method and SQL syntax for your database." },
+            { "Throw": { "Value": "CheckSystem not implemented - choose SSH or HTTP transport and adjust" } }
+        ]
+    },
+    "CheckPassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } },
+            { "DatabaseName": { "Type": "String", "Required": false, "DefaultValue": "master" } },
+            { "DatabasePort": { "Type": "integer", "Required": false, "DefaultValue": "1433" } }
+        ],
+        "Do": [
+            { "Comment": "Attempt to authenticate to the database as the target user" },
+            { "Comment": "Option 1: Via SSH to a host with database CLI tools" },
+            { "Comment": "Option 2: Via HTTP REST API proxy" },
+            { "Throw": { "Value": "CheckPassword not implemented - adjust for your database type" } }
+        ]
+    },
+    "ChangePassword": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "AccountUsername": { "Type": "String", "Required": true } },
+            { "AccountPassword": { "Type": "Secret", "Required": true } },
+            { "NewPassword": { "Type": "Secret", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } },
+            { "DatabaseName": { "Type": "String", "Required": false, "DefaultValue": "master" } },
+            { "DatabasePort": { "Type": "integer", "Required": false, "DefaultValue": "1433" } }
+        ],
+        "Do": [
+            { "Comment": "SQL Server example: ALTER LOGIN [username] WITH PASSWORD = N'newpass'" },
+            { "Comment": "PostgreSQL example: ALTER USER username WITH PASSWORD 'newpass'" },
+            { "Comment": "MySQL example: ALTER USER 'username'@'%' IDENTIFIED BY 'newpass'" },
+            { "Comment": "Connect via SSH to a host with CLI tools, then run the SQL command" },
+            { "Throw": { "Value": "ChangePassword not implemented - adjust for your database type" } }
+        ]
+    },
+    "DiscoverAccounts": {
+        "Parameters": [
+            { "Address": { "Type": "String", "Required": true } },
+            { "FuncUsername": { "Type": "String", "Required": true } },
+            { "FuncPassword": { "Type": "Secret", "Required": true } },
+            { "DatabaseName": { "Type": "String", "Required": false, "DefaultValue": "master" } },
+            { "DatabasePort": { "Type": "integer", "Required": false, "DefaultValue": "1433" } }
+        ],
+        "Do": [
+            { "Comment": "SQL Server: SELECT name FROM sys.sql_logins WHERE is_disabled = 0" },
+            { "Comment": "PostgreSQL: SELECT usename FROM pg_user" },
+            { "Comment": "MySQL: SELECT User FROM mysql.user" },
+            { "Throw": { "Value": "DiscoverAccounts not implemented - adjust for your database type" } }
+        ]
+    },
+    "Functions": []
+}
