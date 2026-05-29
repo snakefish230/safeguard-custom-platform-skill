@@ -4,6 +4,10 @@ This is a complete, production-verified custom platform for ServiceNow using
 API Key authentication against the ServiceNow REST Table API. Verified working
 on Safeguard 8.2+ / ServiceNow Vancouver.
 
+**Note:** This example uses the `sys_user` table for user account management. 
+ServiceNow has multiple credential tables with different field formats -- see 
+the [Discovery Credentials](#discovery-credentials-table) section for `discovery_credentials` table specifics.
+
 ## Custom Parameters
 
 | Parameter | Type | Description |
@@ -285,3 +289,100 @@ Discovery requires additional Safeguard configuration beyond the script:
 | No accounts discovered | Rule mismatch or discovery not configured | Check NameFilter, ensure schedule assigned to asset |
 | API 403 | Missing ACL | Ensure `rest_service` role + `sys_user` table ACL |
 | Cannot change asset platform | Safeguard limitation | Must create a new asset (cannot change platform type) |
+
+## Discovery Credentials Table
+
+ServiceNow's `discovery_credentials` table stores credentials used by Discovery for SSH, SNMP, Windows, etc. This table has **different field formats** than `sys_user`.
+
+### Key Differences from sys_user
+
+| Aspect | sys_user table | discovery_credentials table |
+|--------|----------------|----------------------------|
+| Field format | Objects with `.Value` property | **Plain strings** |
+| Access pattern | `%{user.user_name.Value}%` | `%{cred.user_name}%` |
+| Has user_password | Yes (PATCH to change) | Yes (PATCH to change) |
+| Empty values | Rare | **Common** (OAuth, SNMP credentials have empty `user_name`) |
+
+### Critical Gotchas for discovery_credentials
+
+1. **Plain string field values**: Unlike `sys_user`, the `discovery_credentials` table returns `user_name` and `sys_id` as plain strings, NOT objects with `.Value`:
+   ```json
+   // WRONG for discovery_credentials:
+   {"WriteDiscoveredAccount": {"Name": "%{cred.user_name.Value}%"}}
+   
+   // CORRECT for discovery_credentials:
+   {"WriteDiscoveredAccount": {"Name": "%{cred.user_name}%"}}
+   ```
+
+2. **Filter empty usernames**: Many credential types (OAuth, SNMP, MID Server) have empty `user_name` fields. These cause `WriteDiscoveredAccount` to fail silently. Always filter:
+   ```
+   sysparm_query=type=ssh^use_high_security=false^user_nameISNOTEMPTY
+   ```
+
+3. **Filter values vs display names**: The `type` field uses lowercase values (`ssh`, `snmp`, `windows`), not display names (`SSH Credentials`, `SNMP Community String`).
+
+4. **Test externally first**: Query the API directly before relying on Safeguard discovery:
+   ```bash
+   curl -s -H "x-sn-apikey: $KEY" \
+     "https://instance.service-now.com/api/now/table/discovery_credentials?sysparm_limit=5" | jq .
+   ```
+
+### Working DiscoverAccounts for discovery_credentials
+
+```json
+"DiscoverAccounts": {
+  "Parameters": [
+    {"FuncApiKey": {"Type": "Secret"}},
+    {"Address": {"Type": "String"}},
+    {"DiscoveryQuery": {"Type": "Object", "Required": false}}
+  ],
+  "Do": [
+    {"BaseAddress": {"Address": "https://%Address%"}},
+    {"NewHttpRequest": {"ObjectName": "req"}},
+    {"Headers": {"RequestObjectName": "req", "AddHeaders": {"x-sn-apikey": "%FuncApiKey%"}}},
+    {"Request": {
+      "RequestObjectName": "req",
+      "ResponseObjectName": "resp",
+      "Verb": "GET",
+      "Url": "api/now/table/discovery_credentials?sysparm_query=type=ssh^use_high_security=false^user_nameISNOTEMPTY&sysparm_fields=sys_id,user_name,name,type",
+      "Content": {"ContentType": "application/json"}
+    }},
+    {"SetItem": {"Name": "jsonStr", "Value": "%{resp.Content}%"}},
+    {"ExtractJsonObject": {"JsonObjectName": "jsonStr", "Name": "parsed"}},
+    {"SetItem": {"Name": "creds", "Value": "%{parsed.result}%"}},
+    {"ForEach": {
+      "CollectionName": "creds",
+      "ElementName": "cred",
+      "Body": {"Do": [
+        {"WriteDiscoveredAccount": {"Name": "%{cred.user_name}%"}}
+      ]}
+    }},
+    {"Return": {"Value": true}}
+  ]
+}
+```
+
+### Debugging Discovery Failures
+
+Discovery framework failures are opaque. If discovery fails:
+
+1. **No audit log in `AuditLog/Passwords/DiscoverAccounts`**: Framework-level failures don't create entries here
+2. **Check `AuditLog/Search`**: Look for `AccountDiscoveryFailed` events (limited error details)
+3. **Test the query externally**: Use curl/PowerShell to verify the API returns expected data
+4. **Check for empty values**: Empty `user_name` fields cause silent failures
+5. **Verify field format**: Are you using `.Value` when you shouldn't be, or vice versa?
+
+### Discovery Rule Configuration
+
+When creating discovery rules for `discovery_credentials`:
+
+```powershell
+# Create rule with AutoManageDiscoveredAccounts=false (important for testing)
+$ruleBody = @{
+    Name = "SSH Credentials"
+    AssetId = 135
+    NameFilter = "*"
+    AutoManageDiscoveredAccounts = $false  # Prevent auto password changes
+}
+Invoke-SafeguardMethod -Service Core -Method POST -RelativeUrl "AssetDiscoveryRules" -Body $ruleBody -Insecure
+```

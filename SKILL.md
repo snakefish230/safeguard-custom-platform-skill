@@ -44,12 +44,16 @@ Document these with the user:
    - `CheckSystem` (test connectivity) -- recommended
    - `CheckPassword` (verify credentials) -- recommended
    - `ChangePassword` (rotate credentials) -- recommended
-   - `DiscoverAccounts` (enumerate accounts) -- optional
+   - `DiscoverAccounts` (enumerate accounts) -- **recommended** (not optional; simplifies testing and account management)
 2. **Target authentication method**: Basic auth, OAuth 2.0, API keys, certificates
    - Read [references/authentication-methods.md](references/authentication-methods.md) for details
 3. **Service account permissions** on the target platform
    - Read [references/permission-requirements.md](references/permission-requirements.md) for details
 4. **Safeguard requirements**: appliance URL, service account with **Authorizer** + **Asset Administrator** roles
+5. **Test accounts**: Ensure at least **two accounts** exist in the target platform:
+   - One for the service account (used by Safeguard to authenticate to the target)
+   - One or more test accounts for CheckPassword, ChangePassword, and discovery testing
+   - This separation prevents circular dependencies during testing
 
 ### Phase 3: Environment Setup
 
@@ -120,6 +124,15 @@ $account = New-SafeguardAssetAccount -Insecure $asset.Id 'test'
 **CRITICAL: Always run ChangePassword before CheckPassword.** CheckPassword
 compares the vault password against the target -- an empty vault always fails.
 
+**Test API queries externally first.** Before relying on Safeguard's discovery framework, use curl/PowerShell to query the target API directly. This isolates script logic issues from framework issues and reveals field format differences (e.g., objects vs strings, empty values).
+
+```powershell
+# Example: Test ServiceNow query externally before using in script
+curl -s -H "x-sn-apikey: $API_KEY" "https://instance.service-now.com/api/now/table/sys_user?sysparm_limit=5" | jq .
+
+# Look for: field value formats, empty fields, actual filter values vs display names
+```
+
 ```powershell
 .\scripts\test-platform.ps1 -AssetId $asset.Id -AccountId $account.Id
 ```
@@ -176,7 +189,12 @@ custom parameters, and setup steps.
 - **customplatforms.psm1 is separate**: The custom platform cmdlets (`New-SafeguardCustomPlatform`, `Import-SafeguardCustomPlatformScript`, etc.) are NOT included in the `safeguard-ps` module. Download `customplatforms.psm1` separately from the [safeguard-ps GitHub repo](https://github.com/OneIdentity/safeguard-ps/blob/master/modules/customplatforms/customplatforms.psm1).
 - **Cannot change asset platform**: You cannot change an existing asset's platform type after creation. You must create a new asset.
 - **Discovery needs Safeguard config**: Having `DiscoverAccounts` in the script is not enough. Account discovery also requires a discovery schedule and rules configured in Safeguard (via GUI or API), assigned to the asset.
-- **ServiceNow field values**: ServiceNow REST API returns fields as objects with a `.Value` property. Use `%{user.user_name.Value}%` not `%{user.user_name}%`.
+- **Discovery rules -- AutoManageDiscoveredAccounts**: Set `AutoManageDiscoveredAccounts=false` on discovery rules to prevent Safeguard from automatically changing passwords on discovered accounts during initial testing.
+- **Discovery framework failures are opaque**: When discovery fails at the Safeguard framework level (before your script runs or due to WriteDiscoveredAccount failures), there is no audit log entry in `AuditLog/Passwords/DiscoverAccounts`. Failures appear only as `AccountDiscoveryFailed` in general `AuditLog/Search` with minimal error details. Test externally first to isolate issues.
+- **Field format varies by API/table**: The same platform may return fields in different formats depending on the endpoint or table. For example, ServiceNow `sys_user` table returns `user_name` and `sys_id` as **objects with `.Value` property** (`%{user.user_name.Value}%`), but `discovery_credentials` table returns them as **plain strings** (`%{cred.user_name}%`). Always test the specific endpoint you're using.
+- **Empty field values crash discovery**: Records with empty required fields (e.g., `user_name=""`) will cause `WriteDiscoveredAccount` to fail with no useful error. Filter these out in your query (e.g., `user_nameISNOTEMPTY` in ServiceNow).
+- **Filter values differ from display names**: API filter values are often different from display names shown in the UI. For example, ServiceNow credential type is `ssh` (lowercase filter value), not `SSH Credentials` (display name). Test your queries externally to confirm correct filter values.
+- **DiscoveryQuery parameter**: Some discovery implementations require a `DiscoveryQuery` parameter in the script: `{ "DiscoveryQuery": { "Type": "Object", "Required": false } }`. Include this if discovery fails with parameter-related errors.
 
 ## Key Principles
 
